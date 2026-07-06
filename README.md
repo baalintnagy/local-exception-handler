@@ -21,12 +21,12 @@ Spring, Servlet, and Validation APIs are declared as `provided` dependencies so 
 <dependency>
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.1</version>
+    <version>0.9.1a</version>
 </dependency>
 ```
 
 ```groovy
-implementation 'io.github.baalintnagy:local-exception-handler:0.9.1'
+implementation 'io.github.baalintnagy:local-exception-handler:0.9.1a'
 ```
 
 ## Usage
