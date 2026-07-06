@@ -6,7 +6,7 @@
 
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.1a</version>
+    <version>0.9.1b</version>
     <packaging>jar</packaging>
 
     <name>Local Exception Handler</name>
