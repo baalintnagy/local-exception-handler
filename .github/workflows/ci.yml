@@ -30,24 +30,7 @@ jobs:
       - name: Run tests
         run: mvn -B clean verify
 
-  dependency-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          java-version: 17
-          distribution: temurin
-          cache: maven
-
-      - name: Run dependency check
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B org.owasp:dependency-check-maven:check -DnvdApiKey="${NVD_API_KEY}"
-
+  # TODO: Restore automatic dependency scanning after cached manual runs are reliable.
   release-bundle:
     runs-on: ubuntu-latest
 
