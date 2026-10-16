@@ -5,10 +5,15 @@ import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.MessageSourceResolvable;
@@ -17,159 +22,169 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
-import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import jakarta.validation.ConstraintViolationException;
-import lombok.extern.slf4j.Slf4j;
-
-/**
- * Spring MVC controller advice that maps common exceptions to RFC 7807 {@link ProblemDetail} responses.
- */
+/** Spring MVC advice with consistent, payload-free validation responses and diagnostics. */
 @Slf4j
 @ControllerAdvice
 public class LocalExceptionHandler extends ResponseEntityExceptionHandler {
 
-    private static final String LOG_FORMAT = "Exception: [{}] status={}, type={}, id={}, timestamp={}, instance={}";
-    private static final String VIOLATIONS = "violations";
-    private static final String ERROR_TYPE = "errorType";
-    private static final String MESSAGE = "message";
-    private static final String VALIDATION_FAILED_TITLE = "Validation failed";
-    private static final String VALIDATION_FAILED_DETAIL = "One or more fields are invalid.";
-    private static final String CONSTRAINT_VIOLATION_TITLE = "Constraint violation";
-    private static final String CONSTRAINT_VIOLATION_DETAIL = "One or more constraints were violated.";
-    private static final String BUSINESS_RULE_VIOLATION_TITLE = "Business rule violation";
-    private static final String BUSINESS_RULE_VIOLATION_TYPE = "BUSINESS_RULE_VIOLATION";
-    private static final String RESOURCE_NOT_FOUND_TITLE = "Resource not found";
-    private static final String RESOURCE_NOT_FOUND_TYPE = "RESOURCE_NOT_FOUND";
-    private static final String FIELD = "field";
-    private static final String REJECTED_VALUE = "rejectedValue";
-    private static final String PROPERTY = "property";
-    private static final String INVALID_VALUE = "invalidValue";
+    private static final String LOG_FORMAT = "event=http_exception exceptionType={} status={} id={} instance={}";
 
     @Override
     protected @Nullable ResponseEntity<Object> handleExceptionInternal(
-        Exception ex,
-        @Nullable Object body,
-        HttpHeaders headers,
-        HttpStatusCode status,
+        Exception ex, @Nullable Object body, HttpHeaders headers, HttpStatusCode status,
         WebRequest request) {
 
-        if (ex instanceof HandlerMethodValidationException validationEx
-            && !(body instanceof ProblemDetail)) {
-            List<Map<String, Object>> violations = validationEx.getAllErrors()
+        if (ex instanceof MethodArgumentNotValidException validation) {
+            body = validationProblem(status, validation.getBindingResult().getAllErrors()
                 .stream()
                 .map(this::convertResolvableToMap)
-                .toList();
-
-            ProblemDetail problemDetailForStatus = ProblemDetail.forStatus(status);
-            ExceptionHandlerUtils.fillProblemDetail(
-                problemDetailForStatus,
-                VALIDATION_FAILED_TITLE,
-                VALIDATION_FAILED_DETAIL,
-                VIOLATIONS, violations);
-            body = problemDetailForStatus;
+                .toList());
+        } else if (ex instanceof HandlerMethodValidationException validation) {
+            List<Map<String, Object>> violations = new ArrayList<>();
+            validation.getParameterValidationResults().forEach(result -> {
+                String name = result.getMethodParameter().getParameterName();
+                String property = name == null
+                    ? "arg" + result.getMethodParameter().getParameterIndex()
+                    : name;
+                result.getResolvableErrors().forEach(error -> violations.add(
+                    violation(error, property, result.getArgument())));
+            });
+            validation.getCrossParameterValidationResults().stream()
+                .map(this::convertResolvableToMap)
+                .forEach(violations::add);
+            body = validationProblem(status, violations);
         }
 
-        var id = randomUUID();
-        var epochMillis = Instant.now().toEpochMilli();
+        // Let Spring resolve ErrorResponse bodies and honor already committed responses first.
+        ResponseEntity<Object> response = super.handleExceptionInternal(
+            ex, body, headers, status, request);
+        if (response != null
+            && response.getBody() instanceof ProblemDetail problem) {
+            logHandledException(ex, problem, status);
+        }
+        return response;
+    }
 
-        var problem = (body instanceof ProblemDetail pd)
-            ? pd
+    @Override
+    protected ResponseEntity<Object> createResponseEntity(
+        @Nullable Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+
+        ProblemDetail problem = body instanceof ProblemDetail existing
+            ? existing
             : ProblemDetail.forStatus(status);
-        problem.setProperty("id", id.toString());
-        problem.setProperty("timestamp", epochMillis);
-        problem.setInstance(ExceptionHandlerUtils.getInstanceFrom(request));
+        problem.setProperty("id", randomUUID().toString());
+        problem.setProperty("timestamp", Instant.now().toEpochMilli());
+        if (problem.getInstance() == null) {
+            problem.setInstance(ExceptionHandlerUtils.getInstanceFrom(request));
+        }
+        return super.createResponseEntity(problem, headers, status, request);
+    }
 
+    private ProblemDetail validationProblem(HttpStatusCode status,
+        List<Map<String, Object>> violations) {
+        ProblemDetail problem = ProblemDetail.forStatus(status);
+        problem.setTitle("Validation failed");
+        problem.setDetail("One or more fields are invalid.");
+        problem.setProperty("violations", violations);
+        return problem;
+    }
+
+    /** Applications may explicitly opt in to submitted values in validation responses. */
+    protected boolean includeRejectedValues() {
+        return false;
+    }
+
+    /** Applications may explicitly opt in to exception messages and stack traces in logs. */
+    protected boolean includeExceptionDetailsInLogs() {
+        return false;
+    }
+
+    /** Override to integrate application-specific structured logging or correlation. */
+    protected void logHandledException(Exception ex, ProblemDetail problem, HttpStatusCode status) {
+        Object id = problem.getProperties() == null ? null : problem.getProperties().get("id");
+        Object[] arguments = { ex.getClass().getSimpleName(), status.value(), id,
+                problem.getInstance() };
+        if (includeExceptionDetailsInLogs()) {
+            arguments = new Object[] { arguments[0], arguments[1], arguments[2], arguments[3], ex };
+        }
         if (status.is4xxClientError()) {
-            log.warn(LOG_FORMAT,
-                ex.toString(), status.value(), problem.getType(), id, epochMillis, problem.getInstance(), ex);
+            log.warn(LOG_FORMAT, arguments);
         } else {
-            log.error(LOG_FORMAT,
-                ex.toString(), status.value(), problem.getType(), id, epochMillis, problem.getInstance(), ex);
+            log.error(LOG_FORMAT, arguments);
         }
-
-        return super.handleExceptionInternal(ex, problem, headers, status, request);
     }
 
-    /**
-     * Converts a Spring validation error into a serializable map entry for the {@code violations} property.
-     */
-    protected Map<String, Object> convertResolvableToMap(MessageSourceResolvable resolvable) {
-        if (resolvable instanceof FieldError fieldError) {
-            return ExceptionHandlerUtils.createMap(
-                FIELD, fieldError.getField(),
-                MESSAGE, fieldError.getDefaultMessage(),
-                REJECTED_VALUE, String.valueOf(fieldError.getRejectedValue()));
-        }
-        if (resolvable instanceof ObjectError objectError) {
-            return ExceptionHandlerUtils.createMap(MESSAGE, objectError.getDefaultMessage());
-        }
-        return ExceptionHandlerUtils.createMap(MESSAGE, resolvable.getDefaultMessage());
+    /** Shared property/code/message representation for Spring validation errors. */
+    protected Map<String, Object> convertResolvableToMap(MessageSourceResolvable error) {
+        return violation(error, "", null);
     }
 
-    /**
-     * Handles Jakarta Bean Validation constraint violations as a {@code 400 Bad Request} problem.
-     */
+    private Map<String, Object> violation(MessageSourceResolvable error, String property,
+        @Nullable Object invalidValue) {
+        if (error instanceof FieldError field) {
+            property = field.getField();
+            invalidValue = field.getRejectedValue();
+        }
+        String[] codes = error.getCodes();
+        String code = codes == null
+            || codes.length == 0 ? "Invalid" : codes[codes.length - 1];
+        int separator = code.indexOf('.');
+        if (separator >= 0) {
+            code = code.substring(0, separator);
+        }
+        return violation(property, code, error.getDefaultMessage(), invalidValue);
+    }
+
+    private Map<String, Object> violation(String property, String code, @Nullable String message,
+        @Nullable Object invalidValue) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("property", property);
+        result.put("code", code);
+        result.put("message", message == null ? "Invalid value." : message);
+        if (includeRejectedValues()) {
+            result.put("invalidValue", ExceptionHandlerUtils.safeToString(invalidValue));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** Handles Jakarta method and programmatic validation failures. */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Object> handleConstraintViolation(
         @NonNull ConstraintViolationException ex, @NonNull WebRequest request) {
-
-        var violations = ex.getConstraintViolations()
-            .stream()
-            .map(cv -> Map.of(
-                PROPERTY, ExceptionHandlerUtils.getPathFrom(cv),
-                INVALID_VALUE, ExceptionHandlerUtils.safeToString(cv.getInvalidValue()),
-                MESSAGE, cv.getMessage()))
+        List<Map<String, Object>> violations = ex.getConstraintViolations().stream()
+            .map(cv -> violation(ExceptionHandlerUtils.getPathFrom(cv),
+                cv.getConstraintDescriptor() == null ? "Invalid"
+                    : cv.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName(),
+                cv.getMessage(), cv.getInvalidValue()))
             .toList();
-
-        var problem = ProblemDetail.forStatus(BAD_REQUEST);
-        ExceptionHandlerUtils.fillProblemDetail(problem,
-            CONSTRAINT_VIOLATION_TITLE,
-            CONSTRAINT_VIOLATION_DETAIL,
-            VIOLATIONS, violations);
-
-        return handleExceptionInternal(ex, problem, new HttpHeaders(),
-            BAD_REQUEST, request);
+        return handleExceptionInternal(ex, validationProblem(BAD_REQUEST, violations),
+            new HttpHeaders(), BAD_REQUEST, request);
     }
 
-    /**
-     * Handles illegal arguments as business rule violations.
-     */
+    /** Illegal argument messages are application-authored public error details. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Object> handleIllegalArgumentException(
         @NonNull IllegalArgumentException ex, @NonNull WebRequest request) {
-
-        var problem = ProblemDetail.forStatus(BAD_REQUEST);
-        ExceptionHandlerUtils.fillProblemDetail(problem,
-            BUSINESS_RULE_VIOLATION_TITLE,
-            ex.getMessage(),
-            ERROR_TYPE, BUSINESS_RULE_VIOLATION_TYPE);
-
-        return handleExceptionInternal(ex, problem, new HttpHeaders(),
-            BAD_REQUEST, request);
+        ProblemDetail problem = ProblemDetail.forStatus(BAD_REQUEST);
+        ExceptionHandlerUtils.fillProblemDetail(problem, "Business rule violation", ex.getMessage(),
+            "errorType", "BUSINESS_RULE_VIOLATION");
+        return handleExceptionInternal(ex, problem, new HttpHeaders(), BAD_REQUEST, request);
     }
 
-    /**
-     * Handles missing resources as {@code 404 Not Found} problems.
-     */
+    /** Handles explicitly missing application resources. */
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Object> handleNoSuchElementException(
         @NonNull NoSuchElementException ex, @NonNull WebRequest request) {
-
-        var problem = ProblemDetail.forStatus(NOT_FOUND);
-        ExceptionHandlerUtils.fillProblemDetail(
-            problem,
-            RESOURCE_NOT_FOUND_TITLE,
-            ex.getMessage(),
-            ERROR_TYPE, RESOURCE_NOT_FOUND_TYPE);
-
-        return handleExceptionInternal(ex, problem, new HttpHeaders(),
-            NOT_FOUND, request);
+        ProblemDetail problem = ProblemDetail.forStatus(NOT_FOUND);
+        ExceptionHandlerUtils.fillProblemDetail(problem, "Resource not found", ex.getMessage(),
+            "errorType", "RESOURCE_NOT_FOUND");
+        return handleExceptionInternal(ex, problem, new HttpHeaders(), NOT_FOUND, request);
     }
-
 }

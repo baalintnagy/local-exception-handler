@@ -23,13 +23,14 @@ class LocalExceptionHandlerTest {
 
     @Test
     void convertResolvableToMapIncludesFieldErrorDetails() {
-        var error = new FieldError("request", "name", "bad", false, null, null, "must not be blank");
+        var error = new FieldError("request", "name", "bad", false, null, null,
+            "must not be blank");
 
         var result = handler.convertResolvableToMap(error);
 
-        assertThat(result).containsEntry("field", "name")
+        assertThat(result).containsEntry("property", "name")
             .containsEntry("message", "must not be blank")
-            .containsEntry("rejectedValue", "bad");
+            .containsEntry("code", "Invalid").doesNotContainKeys("rejectedValue", "invalidValue");
     }
 
     @Test
@@ -37,16 +38,16 @@ class LocalExceptionHandlerTest {
         var error = new ObjectError("request", "invalid request");
 
         assertThat(handler.convertResolvableToMap(error))
-            .containsOnly(org.assertj.core.api.Assertions.entry("message", "invalid request"));
+            .containsEntry("property", "").containsEntry("message", "invalid request");
     }
 
     @Test
     void convertResolvableToMapHandlesGenericResolvable() {
         var error = new org.springframework.context.support.DefaultMessageSourceResolvable(
-            new String[] {"plain"}, null, "plain");
+            new String[] { "plain" }, null, "plain");
 
         assertThat(handler.convertResolvableToMap(error))
-            .containsOnly(org.assertj.core.api.Assertions.entry("message", "plain"));
+            .containsEntry("property", "").containsEntry("message", "plain");
     }
 
     @Test
@@ -64,15 +65,17 @@ class LocalExceptionHandlerTest {
             request("/server-error"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(response.getBody()).isInstanceOfSatisfying(org.springframework.http.ProblemDetail.class, problem -> {
-            assertThat(problem.getStatus()).isEqualTo(500);
-            assertThat(problem.getProperties()).containsKeys("id", "timestamp");
-            assertThat(problem.getInstance().toString()).isEqualTo("/server-error");
-        });
+        assertThat(response.getBody())
+            .isInstanceOfSatisfying(org.springframework.http.ProblemDetail.class, problem -> {
+                assertThat(problem.getStatus()).isEqualTo(500);
+                assertThat(problem.getProperties()).containsKeys("id", "timestamp");
+                assertThat(problem.getInstance().toString()).isEqualTo("/server-error");
+            });
     }
 
     @Test
-    void handleExceptionInternalEnrichesHandlerMethodValidationException() throws NoSuchMethodException {
+    void handleExceptionInternalEnrichesHandlerMethodValidationException()
+        throws NoSuchMethodException {
         Method method = SampleValidatedController.class.getDeclaredMethod("submit", String.class);
         var validationResult = MethodValidationResult.create(
             new SampleValidatedController(),
@@ -87,12 +90,54 @@ class LocalExceptionHandlerTest {
             request("/validated"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).isInstanceOfSatisfying(org.springframework.http.ProblemDetail.class, problem -> {
-            assertThat(problem.getTitle()).isEqualTo("Validation failed");
-            assertThat(problem.getDetail()).isEqualTo("One or more fields are invalid.");
-            assertThat(problem.getProperties()).containsKeys("violations", "id", "timestamp");
-            assertThat(problem.getInstance().toString()).isEqualTo("/validated");
-        });
+        assertThat(response.getBody())
+            .isInstanceOfSatisfying(org.springframework.http.ProblemDetail.class, problem -> {
+                assertThat(problem.getTitle()).isEqualTo("Validation failed");
+                assertThat(problem.getDetail()).isEqualTo("One or more fields are invalid.");
+                assertThat(problem.getProperties()).containsKeys("violations", "id", "timestamp");
+                assertThat(problem.getInstance().toString()).isEqualTo("/validated");
+            });
+    }
+
+    @Test
+    void preservesCommittedResponses() {
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        response.setCommitted(true);
+        var request = new ServletWebRequest(new MockHttpServletRequest(), response);
+        assertThat(handler.handle(new IllegalStateException("private"), null,
+            HttpStatus.INTERNAL_SERVER_ERROR, request)).isNull();
+    }
+
+    @Test
+    void nullMessagesAndEmptyCodesHaveStableFallbacks() {
+        var error = new org.springframework.context.support.DefaultMessageSourceResolvable(
+            new String[0], null, null);
+        assertThat(handler.convertResolvableToMap(error)).containsEntry("code", "Invalid")
+            .containsEntry("message", "Invalid value.");
+    }
+
+    @Test
+    void exceptionDetailsCanBeExplicitlyEnabledForDiagnostics() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+            .getLogger(LocalExceptionHandler.class);
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            var diagnostic = new LocalExceptionHandler() {
+                @Override
+                protected boolean includeExceptionDetailsInLogs() {
+                    return true;
+                }
+            };
+            diagnostic.handleIllegalArgumentException(new IllegalArgumentException("diagnostic"),
+                request("/diagnostic"));
+            assertThat(logs.list).hasSize(1);
+            assertThat(logs.list.get(0).getThrowableProxy()).isNotNull();
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
+        }
     }
 
     private ServletWebRequest request(String uri) {
@@ -101,7 +146,8 @@ class LocalExceptionHandlerTest {
 
     private static final class TestableLocalExceptionHandler extends LocalExceptionHandler {
 
-        ResponseEntity<Object> handle(Exception ex, Object body, HttpStatus status, WebRequest request) {
+        ResponseEntity<Object> handle(Exception ex, Object body, HttpStatus status,
+            WebRequest request) {
             return handleExceptionInternal(ex, body, new HttpHeaders(), status, request);
         }
     }

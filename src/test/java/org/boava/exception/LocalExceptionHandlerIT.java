@@ -29,7 +29,8 @@ class LocalExceptionHandlerIT {
         assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
             assertThat(problem.getTitle()).isEqualTo("Business rule violation");
             assertThat(problem.getDetail()).isEqualTo("Invalid customer state");
-            assertThat(problem.getProperties()).containsEntry("errorType", "BUSINESS_RULE_VIOLATION");
+            assertThat(problem.getProperties()).containsEntry("errorType",
+                "BUSINESS_RULE_VIOLATION");
             assertCommonProblemFields(problem, "/illegal-argument");
         });
     }
@@ -55,12 +56,13 @@ class LocalExceptionHandlerIT {
             "not-an-email",
             "must be a well-formed email address")));
 
-        var response = handler.handleConstraintViolation(exception, request("/constraint-violation"));
+        var response = handler.handleConstraintViolation(exception,
+            request("/constraint-violation"));
 
         assertThat(response.getStatusCode().value()).isEqualTo(400);
         assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
-            assertThat(problem.getTitle()).isEqualTo("Constraint violation");
-            assertThat(problem.getDetail()).isEqualTo("One or more constraints were violated.");
+            assertThat(problem.getTitle()).isEqualTo("Validation failed");
+            assertThat(problem.getDetail()).isEqualTo("One or more fields are invalid.");
             assertThat(problem.getProperties()).containsKey("violations");
             assertCommonProblemFields(problem, "/constraint-violation");
         });

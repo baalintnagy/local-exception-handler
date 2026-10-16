@@ -21,12 +21,12 @@ Spring, Servlet, and Validation APIs are declared as `provided` dependencies so 
 <dependency>
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.1b</version>
+    <version>0.9.2</version>
 </dependency>
 ```
 
 ```groovy
-implementation 'io.github.baalintnagy:local-exception-handler:0.9.1b'
+implementation 'io.github.baalintnagy:local-exception-handler:0.9.2'
 ```
 
 ## Usage
@@ -49,6 +49,49 @@ The handler currently maps:
 | `ConstraintViolationException` | `400 Bad Request` | `title`, `detail`, `violations`, `id`, `timestamp`, `instance` |
 | Spring MVC validation exceptions handled by `ResponseEntityExceptionHandler` | matching Spring status | enriched with `id`, `timestamp`, `instance` |
 
+## Validation and disclosure policy
+
+`ConstraintViolationException`, MVC request-body validation and MVC method validation
+all use the same `violations` entries:
+
+```json
+{
+    "property": "name",
+    "code": "Size",
+    "message": "size must be between 0 and 3"
+}
+```
+
+Body fields use their binding paths; method parameters use their parameter names
+(or an `argN` fallback); Jakarta violations use their property paths. Global and
+cross-parameter errors use an empty property. Constraint codes use the short name
+from Spring's message codes or the Jakarta constraint annotation.
+
+Submitted values are omitted by default. The handler logs exception class, status,
+correlation id and request path, without exception messages or stack traces.
+Applications can subclass the advice and override `includeRejectedValues()` or
+`includeExceptionDetailsInLogs()` to opt in independently. Register the subclass
+instead of also importing `LocalExceptionHandler`. Override `logHandledException`
+for a custom logging policy.
+
+Applications still control constraint messages and the public messages supplied to
+`IllegalArgumentException` and `NoSuchElementException`; keep those messages free
+of secrets. Spring or other application loggers configured at DEBUG/TRACE can log
+request data independently of this handler.
+
+Spring's existing `ProblemDetail` bodies, status codes, headers, details, types,
+extensions and explicit instances are preserved. Metadata is added after Spring
+resolves `ErrorResponse` exceptions. MVC return-value validation retains Spring's
+500 status. Authentication/filter errors outside MVC retain their existing handlers.
+
+### Upgrading from 0.9.1b
+
+Validation entries now consistently use `property`, `code`, and `message`, rather
+than the previous mixture of `field`, `rejectedValue`, and `invalidValue`. Rejected
+values require explicit opt-in. Request-body errors now include `violations`, and
+all three validation paths use the title `Validation failed`. Expected client
+failures no longer log a full exception by default.
+
 ## Development
 
 ```bash
@@ -62,8 +105,15 @@ The build runs unit tests, integration tests, and a JaCoCo coverage gate requiri
 Releases are tag-driven:
 
 ```bash
-./versionbump.sh v0.1.0
+./versionbump.sh v0.9.2
 git push origin main --tags
 ```
 
 The release workflow publishes signed source, javadoc, and binary artifacts through Maven Central's Central Portal.
+
+For the prepared `0.9.2` changes, first commit the implementation, tests, `pom.xml`,
+README and changelog together. The version is already set, so tag that tested commit
+with `git tag v0.9.2`, then push `main` and `v0.9.2`. The version-bump helper stages
+only the version files; it does not commit implementation changes automatically.
+Confirm the Release workflow and Central Portal publication before building
+consumers on clean machines.
