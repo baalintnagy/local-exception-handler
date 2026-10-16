@@ -30,7 +30,6 @@ jobs:
       - name: Run tests
         run: mvn -B clean verify
 
-  # TODO: Restore automatic dependency scanning after cached manual runs are reliable.
   release-bundle:
     runs-on: ubuntu-latest
 

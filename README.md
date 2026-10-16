@@ -21,12 +21,12 @@ Spring, Servlet, and Validation APIs are declared as `provided` dependencies so 
 <dependency>
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.2</version>
+    <version>0.9.3</version>
 </dependency>
 ```
 
 ```groovy
-implementation 'io.github.baalintnagy:local-exception-handler:0.9.2'
+implementation 'io.github.baalintnagy:local-exception-handler:0.9.3'
 ```
 
 ## Usage
@@ -105,7 +105,7 @@ The build runs unit tests, integration tests, and a JaCoCo coverage gate requiri
 Releases are tag-driven:
 
 ```bash
-./versionbump.sh v0.9.2
+./versionbump.sh v0.9.3
 git push origin main --tags
 ```
 
@@ -137,3 +137,9 @@ secrets. Never use the dry-run switches when performing the real release.
 
 Confirm both the Release workflow and Central Portal publication before building
 consumers on clean machines.
+
+Dependency Check runs on main/develop pushes, main pull requests, and manually.
+Release uploads wait for the same scan to complete successfully. Configure the
+NVD_API_KEY repository secret before pushing a release tag. The NVD database is
+cached by plugin version; the first scan can still take a long time. No explicit
+workflow timeout is configured. Pull requests from forks cannot access this secret.

@@ -1,7 +1,15 @@
 name: Dependency Check
 
 on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
+  workflow_call:
+    secrets:
+      NVD_API_KEY:
+        required: true
 
 permissions:
   contents: read

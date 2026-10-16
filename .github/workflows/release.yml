@@ -9,7 +9,13 @@ permissions:
   contents: write
 
 jobs:
+  dependency-check:
+    uses: ./.github/workflows/dependency-check.yml
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
   release:
+    needs: dependency-check
     runs-on: ubuntu-latest
 
     steps:
