@@ -47,3 +47,45 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: mvn -B org.owasp:dependency-check-maven:check -DnvdApiKey="${NVD_API_KEY}"
+
+  release-bundle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: maven
+
+      - name: Build release bundle without credentials or uploading
+        run: mvn -B -Prelease -Dcentral.skipUpload=true -Dgpg.skip=true clean deploy
+
+      - name: Verify bundle layout
+        shell: python
+        run: |
+          from pathlib import Path
+          from xml.etree import ElementTree
+          from zipfile import ZipFile
+
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          pom = ElementTree.parse("pom.xml").getroot()
+          group = pom.findtext("m:groupId", namespaces=ns)
+          artifact = pom.findtext("m:artifactId", namespaces=ns)
+          version = pom.findtext("m:version", namespaces=ns)
+          prefix = f"{group.replace('.', '/')}/{artifact}/{version}/"
+          base = f"{artifact}-{version}"
+          required = {base + suffix for suffix in (
+              ".pom", ".jar", "-sources.jar", "-javadoc.jar"
+          )}
+          with ZipFile(Path("target/central-publishing/central-bundle.zip")) as bundle:
+              files = [entry.filename for entry in bundle.infolist() if not entry.is_dir()]
+              assert files and all(name.startswith(prefix) for name in files), files
+              assert required <= {name[len(prefix):] for name in files}, files
+              assert not any("maven-metadata" in name or ".lock" in name
+                             or "_remote.repositories" in name for name in files), files
+              assert bundle.testzip() is None, "Corrupt release bundle"
+          print(f"Validated release bundle: {len(files)} files for {artifact} {version}")

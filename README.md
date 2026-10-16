@@ -109,11 +109,31 @@ Releases are tag-driven:
 git push origin main --tags
 ```
 
-The release workflow publishes signed source, javadoc, and binary artifacts through Maven Central's Central Portal.
+The release workflow uploads signed source, javadoc, binary, and POM artifacts to
+Maven Central's Central Portal, then creates the GitHub Release. Publication is
+manual: after validation succeeds, open
+https://central.sonatype.com/publishing/deployments and select Publish.
 
-For the prepared `0.9.2` changes, first commit the implementation, tests, `pom.xml`,
-README and changelog together. The version is already set, so tag that tested commit
-with `git tag v0.9.2`, then push `main` and `v0.9.2`. The version-bump helper stages
-only the version files; it does not commit implementation changes automatically.
-Confirm the Release workflow and Central Portal publication before building
+Commit all intended source and build changes before creating the release tag.
+The workflow builds the tagged commit, so rerunning an old tag does not pick up
+later fixes. An existing tag may be replaced only for a failed, unpublished
+release; never move a tag for an already published version. Push a replacement
+tag explicitly, using a force-with-lease restricted to that tag.
+
+The publishing plugin is pinned to 0.12.0, which excludes Maven 3.10 staging
+metadata from the release bundle. CI also builds an unsigned bundle without
+credentials and checks its layout before a release is tagged.
+To verify the release lifecycle and create a
+bundle locally without uploading or using a signing key:
+
+```bash
+mvn -B -Prelease -Dcentral.skipUpload=true -Dgpg.skip=true clean deploy
+```
+
+This runs tests and coverage checks and writes
+`target/central-publishing/central-bundle.zip`. The dry-run bundle is unsigned;
+the GitHub release workflow still signs artifacts using the configured GPG
+secrets. Never use the dry-run switches when performing the real release.
+
+Confirm both the Release workflow and Central Portal publication before building
 consumers on clean machines.
