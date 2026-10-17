@@ -1,3 +1,9 @@
+# 0.9.4
+
+- Catch otherwise unhandled checked and runtime exceptions through an Exception-level MVC fallback.
+- Return a generic 500 ProblemDetail with correlation metadata without exposing exception messages.
+- Preserve specific application and Spring MVC handlers, with integration tests for routing and disclosure.
+
 # 0.9.2
 
 - Preserve Spring ErrorResponse details, deliberate statuses, headers and extensions.

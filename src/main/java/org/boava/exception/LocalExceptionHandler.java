@@ -2,6 +2,7 @@ package org.boava.exception;
 
 import static java.util.UUID.randomUUID;
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 import java.time.Instant;
@@ -35,6 +36,16 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class LocalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final String LOG_FORMAT = "event=http_exception exceptionType={} status={} id={} instance={}";
+
+    /** Handles any MVC exception without a more specific handler. */
+    @ExceptionHandler(Exception.class)
+    public @Nullable ResponseEntity<Object> handleUnhandledException(
+        @NonNull Exception ex, @NonNull WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(INTERNAL_SERVER_ERROR,
+            "An unexpected error occurred.");
+        return handleExceptionInternal(ex, problem, new HttpHeaders(), INTERNAL_SERVER_ERROR,
+            request);
+    }
 
     @Override
     protected @Nullable ResponseEntity<Object> handleExceptionInternal(

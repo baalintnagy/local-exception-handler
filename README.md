@@ -4,7 +4,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.baalintnagy/local-exception-handler.svg)](https://search.maven.org/search?q=g:io.github.baalintnagy%20AND%20a:local-exception-handler)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A drop-in Spring MVC `@ControllerAdvice` that turns common application exceptions into RFC 7807 `ProblemDetail` responses.
+A drop-in Spring MVC `@ControllerAdvice` that turns unhandled exceptions into RFC 7807 `ProblemDetail` responses.
 
 ## Requirements
 
@@ -21,12 +21,12 @@ Spring, Servlet, and Validation APIs are declared as `provided` dependencies so 
 <dependency>
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.3</version>
+    <version>0.9.4</version>
 </dependency>
 ```
 
 ```groovy
-implementation 'io.github.baalintnagy:local-exception-handler:0.9.3'
+implementation 'io.github.baalintnagy:local-exception-handler:0.9.4'
 ```
 
 ## Usage
@@ -48,6 +48,13 @@ The handler currently maps:
 | `NoSuchElementException` | `404 Not Found` | `title`, `detail`, `errorType=RESOURCE_NOT_FOUND`, `id`, `timestamp`, `instance` |
 | `ConstraintViolationException` | `400 Bad Request` | `title`, `detail`, `violations`, `id`, `timestamp`, `instance` |
 | Spring MVC validation exceptions handled by `ResponseEntityExceptionHandler` | matching Spring status | enriched with `id`, `timestamp`, `instance` |
+| Any other `Exception` (including checked exceptions and runtime exceptions) | `500 Internal Server Error` | generic `title` and `detail`, `id`, `timestamp`, `instance` |
+
+The `Exception.class` fallback covers exceptions reaching Spring MVC without a more
+specific handler; applications do not need to register each exception type. Existing
+specific mappings take precedence. Unexpected exception messages are never exposed
+in the fallback response. JVM `Error` types and failures outside MVC are outside this
+fallback's scope.
 
 ## Validation and disclosure policy
 
@@ -105,7 +112,7 @@ The build runs unit tests, integration tests, and a JaCoCo coverage gate requiri
 Releases are tag-driven:
 
 ```bash
-./versionbump.sh v0.9.3
+./versionbump.sh v0.9.4
 git push origin main --tags
 ```
 

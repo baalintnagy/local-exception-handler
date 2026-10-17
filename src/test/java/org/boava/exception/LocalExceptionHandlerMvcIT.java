@@ -58,6 +58,40 @@ class LocalExceptionHandlerMvcIT {
     }
 
     @Test
+    void checkedExceptionsUseTheBaseExceptionFallback() throws Exception {
+        assertFallback("/checked");
+    }
+
+    @Test
+    void runtimeExceptionsUseTheBaseExceptionFallback() throws Exception {
+        assertFallback("/runtime");
+    }
+
+    private void assertFallback(String path) throws Exception {
+        mvc.perform(get(path))
+            .andExpect(status().isInternalServerError())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.title").value("Internal Server Error"))
+            .andExpect(jsonPath("$.detail").value("An unexpected error occurred."))
+            .andExpect(jsonPath("$.id").isString())
+            .andExpect(jsonPath("$.timestamp").isNumber())
+            .andExpect(jsonPath("$.instance").value(path));
+        assertSafeLogs();
+        assertThat(logs.list).anySatisfy(event ->
+            assertThat(event.getFormattedMessage()).contains("status=500"));
+    }
+
+    @Test
+    void specificApplicationHandlersTakePrecedenceOverFallback() throws Exception {
+        mvc.perform(get("/illegal"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorType").value("BUSINESS_RULE_VIOLATION"));
+        mvc.perform(get("/missing"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorType").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
     void bodyValidationHasStructuredViolationsWithoutSubmittedValues() throws Exception {
         mvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON)
             .content("{\"name\":\"" + PRIVATE_VALUE + "\"}"))
@@ -166,6 +200,26 @@ class LocalExceptionHandlerMvcIT {
         @PostMapping("/body")
         String body(@Valid @RequestBody Request body) {
             return "ok";
+        }
+
+        @GetMapping("/checked")
+        String checked() throws Exception {
+            throw new Exception(PRIVATE_VALUE);
+        }
+
+        @GetMapping("/runtime")
+        String runtime() {
+            throw new IllegalStateException(PRIVATE_VALUE);
+        }
+
+        @GetMapping("/illegal")
+        String illegal() {
+            throw new IllegalArgumentException("Invalid state");
+        }
+
+        @GetMapping("/missing")
+        String missing() {
+            throw new java.util.NoSuchElementException("Missing resource");
         }
 
         @GetMapping("/parameter")
