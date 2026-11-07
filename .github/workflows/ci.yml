@@ -27,7 +27,7 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Run tests
+      - name: Run tests and applicable style checks
         run: mvn -B clean verify
 
   release-bundle:

@@ -21,12 +21,12 @@ Spring, Servlet, and Validation APIs are declared as `provided` dependencies so 
 <dependency>
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.4</version>
+    <version>0.10.0</version>
 </dependency>
 ```
 
 ```groovy
-implementation 'io.github.baalintnagy:local-exception-handler:0.9.4'
+implementation 'io.github.baalintnagy:local-exception-handler:0.10.0'
 ```
 
 ## Usage
@@ -44,7 +44,7 @@ The handler currently maps:
 
 | Exception | HTTP status | Problem fields |
 |-----------|-------------|----------------|
-| `IllegalArgumentException` | `400 Bad Request` | `title`, `detail`, `errorType=BUSINESS_RULE_VIOLATION`, `id`, `timestamp`, `instance` |
+| `IllegalArgumentException` | `400 Bad Request` | `title`, `detail`, `errorType=INVALID_REQUEST`, `id`, `timestamp`, `instance` |
 | `NoSuchElementException` | `404 Not Found` | `title`, `detail`, `errorType=RESOURCE_NOT_FOUND`, `id`, `timestamp`, `instance` |
 | `ConstraintViolationException` | `400 Bad Request` | `title`, `detail`, `violations`, `id`, `timestamp`, `instance` |
 | Spring MVC validation exceptions handled by `ResponseEntityExceptionHandler` | matching Spring status | enriched with `id`, `timestamp`, `instance` |
@@ -55,6 +55,11 @@ specific handler; applications do not need to register each exception type. Exis
 specific mappings take precedence. Unexpected exception messages are never exposed
 in the fallback response. JVM `Error` types and failures outside MVC are outside this
 fallback's scope.
+
+`IllegalArgumentException` uses the default title `Invalid request` and the
+machine-readable `errorType` value `INVALID_REQUEST`. Its detail comes from the
+exception message unless a message bundle overrides it. Consumers upgrading from
+the previous label must update comparisons against the title or `errorType`.
 
 ## Validation and disclosure policy
 
@@ -91,6 +96,63 @@ extensions and explicit instances are preserved. Metadata is added after Spring
 resolves `ErrorResponse` exceptions. MVC return-value validation retains Spring's
 500 status. Authentication/filter errors outside MVC retain their existing handlers.
 
+### Customizing messages
+
+The advice uses the application's Spring `MessageSource` and the current request
+locale. In Spring Boot, put overrides in `src/main/resources/messages.properties`
+(include this base file even when using locale-specific bundles such as
+`messages_fr.properties`). In plain Spring MVC, register a `MessageSource` bean
+named `messageSource` with the desired bundle basename. The library does not
+register its own message source or bundle.
+
+Problem fields follow Spring's exception-class message-code conventions:
+
+```properties
+problemDetail.title.java.lang.IllegalArgumentException=Invalid request
+problemDetail.java.lang.IllegalArgumentException=The operation is not allowed.
+problemDetail.title.java.util.NoSuchElementException=Resource unavailable
+problemDetail.java.util.NoSuchElementException=The requested resource does not exist.
+problemDetail.java.lang.IllegalStateException=Please try again later.
+problemDetail.title.org.springframework.web.bind.MethodArgumentNotValidException=Check your input
+problemDetail.org.springframework.web.bind.MethodArgumentNotValidException=Correct the invalid fields.
+problemDetail.title.org.springframework.web.method.annotation.HandlerMethodValidationException=Check your input
+problemDetail.org.springframework.web.method.annotation.HandlerMethodValidationException=Correct the invalid parameters.
+problemDetail.title.jakarta.validation.ConstraintViolationException=Check your input
+problemDetail.jakarta.validation.ConstraintViolationException=Correct the invalid values.
+localExceptionHandler.validation.fallback=Invalid value.
+```
+
+Use the **actual exception class**, including for unexpected exceptions and
+subclasses; parent-class keys are not inherited. `ErrorResponse` exceptions retain
+their own message codes and detail arguments. A `problemDetail.type.<exception class>`
+entry can also override the problem type with a URI.
+
+Spring validation entries resolve their existing message codes and arguments
+through the same source (for example, `Size.request.name=Name is too long.`).
+Jakarta constraint violation messages remain interpolated by the validation
+provider; use constraint message templates and its bundle configuration for those.
+
+Without matching entries, current titles, details, and constraint messages remain
+the defaults. Matching entries now override even explicitly supplied titles/details,
+including application-authored exception messages. Status codes, headers,
+correlation metadata, and the response structure are unchanged.
+
+### Upgrading from 0.9.4
+
+`IllegalArgumentException` now returns the default title `Invalid request` and
+`errorType=INVALID_REQUEST`. Update consumers and tests that compare the previous
+title or error code. The HTTP status remains 400, and exception details remain
+application-authored unless overridden through the message source.
+
+Existing matching message-bundle entries now take precedence over library defaults
+and explicitly supplied problem titles/details. Spring validation entries also
+resolve their message codes and arguments through the application's message source.
+Without matching entries, existing messages remain the defaults except for the
+renamed illegal-argument title/code. Message keys and the response schema are unchanged.
+
+The library still targets Java 17. Maintaining sources with the new style tools
+requires JDK 25; consumers do not need those tools or a newer Java runtime.
+
 ### Upgrading from 0.9.1b
 
 Validation entries now consistently use `property`, `code`, and `message`, rather
@@ -105,14 +167,17 @@ failures no longer log a full exception by default.
 mvn clean verify
 ```
 
-The build runs unit tests, integration tests, and a JaCoCo coverage gate requiring at least 90% instruction coverage.
+The build runs unit tests, integration tests, and a JaCoCo coverage gate requiring
+at least 90% instruction coverage. On JDK 25 and newer, `verify` also runs Spotless
+and Checkstyle. Use JDK 25 and `mvn spotless:apply` for Java formatting; see
+[the source-style guide](docs/source-style.md).
 
 ## Release
 
 Releases are tag-driven:
 
 ```bash
-./versionbump.sh v0.9.4
+./versionbump.sh v0.10.0
 git push origin main --tags
 ```
 

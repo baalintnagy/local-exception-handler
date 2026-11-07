@@ -1,0 +1,2 @@
+# Git detects binary files; repository text uses Unix line endings.
+* text=auto eol=lf

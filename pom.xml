@@ -1,18 +1,16 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="utf-8"?>
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>io.github.baalintnagy</groupId>
     <artifactId>local-exception-handler</artifactId>
-    <version>0.9.4</version>
+    <version>0.10.0</version>
     <packaging>jar</packaging>
-
     <name>Local Exception Handler</name>
     <description>A drop-in Spring MVC ControllerAdvice for RFC 7807 ProblemDetail responses</description>
     <url>https://github.com/baalintnagy/local-exception-handler</url>
-
     <licenses>
         <license>
             <name>MIT License</name>
@@ -20,7 +18,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-
     <developers>
         <developer>
             <id>baalintnagy</id>
@@ -29,29 +26,26 @@
             <organizationUrl>https://github.com/baalintnagy</organizationUrl>
         </developer>
     </developers>
-
     <scm>
         <connection>scm:git:git://github.com/baalintnagy/local-exception-handler.git</connection>
         <developerConnection>scm:git:ssh://github.com:baalintnagy/local-exception-handler.git</developerConnection>
         <url>https://github.com/baalintnagy/local-exception-handler/tree/main</url>
     </scm>
-
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
         <spring-framework.version>7.0.8</spring-framework.version>
         <jakarta.servlet.version>6.1.0</jakarta.servlet.version>
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <jspecify.version>1.0.0</jspecify.version>
-        <lombok.version>1.18.38</lombok.version>
         <slf4j.version>2.0.17</slf4j.version>
-
+        <spotless.version>3.10.4</spotless.version>
+        <checkstyle-plugin.version>3.6.0</checkstyle-plugin.version>
+        <checkstyle.version>14.0.0</checkstyle.version>
         <junit.version>5.11.0</junit.version>
         <assertj.version>3.26.0</assertj.version>
         <hamcrest.version>2.2</hamcrest.version>
         <json-path.version>2.9.0</json-path.version>
-
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.0</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.5.0</maven.failsafe.plugin.version>
@@ -62,7 +56,6 @@
         <central.publishing.plugin.version>0.12.0</central.publishing.plugin.version>
         <central.skipUpload>false</central.skipUpload>
     </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.springframework</groupId>
@@ -92,13 +85,6 @@
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -148,7 +134,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -158,13 +143,11 @@
                 <configuration>
                     <release>${maven.compiler.release}</release>
                     <parameters>true</parameters>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
+                    <showWarnings>true</showWarnings>
+                    <compilerArgs>
+                        <!-- Runtime framework annotations do not need a claiming processor. -->
+                        <arg>-Xlint:all,-processing</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -226,8 +209,127 @@
             </plugin>
         </plugins>
     </build>
-
     <profiles>
+        <profile>
+            <id>source-style</id>
+            <activation>
+                <jdk>[25,)</jdk>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.diffplug.spotless</groupId>
+                        <artifactId>spotless-maven-plugin</artifactId>
+                        <version>${spotless.version}</version>
+                        <configuration>
+                            <lineEndings>UNIX</lineEndings>
+                            <java>
+                                <includes>
+                                    <include>src/main/java/**/*.java</include>
+                                    <include>src/test/java/**/*.java</include>
+                                </includes>
+                                <excludes>
+                                    <exclude>**/target/**</exclude>
+                                    <exclude>**/.apt_generated/**</exclude>
+                                </excludes>
+                                <replaceRegex>
+                                    <name>Prefer simple quoted strings</name>
+                                    <searchRegex>(?m)^([ ]*)"""\r?\n(?=[^\r\n]{0,92}\\\r?$)\1([^"\\\r\n]*)\\\r?\n\1"""</searchRegex>
+                                    <replacement>$1"$2"</replacement>
+                                </replaceRegex>
+                                <replaceRegex>
+                                    <name>Keep initial method call with its receiver</name>
+                                    <searchRegex>(?s)("""(?:[^"\\]++|\\.|(?!""")")*+"""|"(?:[^"\\\r\n]++|\\.)*+"|'(?:[^'\\\r\n]++|\\.)*+'|/\*.*?\*/|//[^\r\n]*)|(\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\r?\n[ ]+(\.[A-Za-z_$][\w$]*[ ]*\()</searchRegex>
+                                    <replacement>$1$2$3</replacement>
+                                </replaceRegex>
+                                <replaceRegex>
+                                    <name>Keep literal with its initial method call</name>
+                                    <searchRegex>(?s)("""(?:[^"\\]++|\\.|(?!""")")*+"""|'(?:[^'\\\r\n]++|\\.)*+'|/\*.*?\*/|//[^\r\n]*)|("(?:[^"\\\r\n]++|\\.)*+")(?:\r?\n[ ]+(\.[A-Za-z_$][\w$]*[ ]*\())?</searchRegex>
+                                    <replacement>$1$2$3</replacement>
+                                </replaceRegex>
+                                <eclipse>
+                                    <version>4.41</version>
+                                    <file>${maven.multiModuleProjectDirectory}/eclipse/java-style.properties</file>
+                                </eclipse>
+                                <jsr223>
+                                    <name>Indent text blocks one continuation level</name>
+                                    <dependency>org.apache.groovy:groovy-jsr223:4.0.32</dependency>
+                                    <engine>groovy</engine>
+                                    <script><![CDATA[
+source.replaceAll(/(?m)^([ ]*)([^\r\n]+\r?\n)([ ]*)"""\r?\n((?s:.*?))^([ ]*)"""/) {
+    whole, indent, precedingLine, openingIndent, body, closingIndent ->
+        def statement = precedingLine.trim()
+        def targetIndent = statement.endsWith('=') || statement in ['return', 'yield', 'throw']
+            ? '%s    '.formatted(indent) : openingIndent
+        def contentIndents = body.readLines().findAll { !it.isBlank() }
+            .collect { it.takeWhile { character -> character == ' ' }.size() }
+        def incidentalIndent = (contentIndents + [closingIndent.size()]).min()
+        def indentation = '(?m)^ {0,%d}'.formatted(incidentalIndent)
+        def content = body.replaceAll(indentation, targetIndent).replaceAll('(?m)^[ ]+$', '')
+        '%s%s%s"""\n%s%s"""'.formatted(indent, precedingLine, targetIndent,
+            content, targetIndent)
+}
+                            ]]></script>
+                                </jsr223>
+                                <replaceRegex>
+                                    <name>Wrap long quoted string assignments</name>
+                                    <searchRegex>(?m)^(?=[^\r\n]{101})([ ]*)((?:(?:public|protected|private|static|final)\s+)*String\s+\w+\s*=|(?:description|example)\s*=)[ ]+("(?:\\.|[^"\\\r\n])*"[^\r\n]*)$</searchRegex>
+                                    <replacement>$1$2
+$1    $3</replacement>
+                                </replaceRegex>
+                                <removeUnusedImports />
+                                <forbidWildcardImports />
+                                <importOrder>
+                                    <order>\#,java,</order>
+                                </importOrder>
+                            </java>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>check-formatting</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-checkstyle-plugin</artifactId>
+                        <version>${checkstyle-plugin.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.puppycrawl.tools</groupId>
+                                <artifactId>checkstyle</artifactId>
+                                <version>${checkstyle.version}</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <configLocation>${maven.multiModuleProjectDirectory}/checkstyle/checkstyle.xml</configLocation>
+                            <sourceDirectories>
+                                <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+                            </sourceDirectories>
+                            <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                            <excludeGeneratedSources>true</excludeGeneratedSources>
+                            <includeResources>false</includeResources>
+                            <includeTestResources>false</includeTestResources>
+                            <consoleOutput>true</consoleOutput>
+                            <failOnViolation>true</failOnViolation>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>check-source-style</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>release</id>
             <build>

@@ -25,12 +25,13 @@ class LocalExceptionHandlerIT {
         var response = handler.handleIllegalArgumentException(
             new IllegalArgumentException("Invalid customer state"), request("/illegal-argument"));
 
-        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getStatusCode()
+            .value()).isEqualTo(400);
         assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
-            assertThat(problem.getTitle()).isEqualTo("Business rule violation");
+            assertThat(problem.getTitle()).isEqualTo("Invalid request");
             assertThat(problem.getDetail()).isEqualTo("Invalid customer state");
             assertThat(problem.getProperties()).containsEntry("errorType",
-                "BUSINESS_RULE_VIOLATION");
+                "INVALID_REQUEST");
             assertCommonProblemFields(problem, "/illegal-argument");
         });
     }
@@ -40,7 +41,8 @@ class LocalExceptionHandlerIT {
         var response = handler.handleNoSuchElementException(
             new NoSuchElementException("Customer was not found"), request("/missing"));
 
-        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getStatusCode()
+            .value()).isEqualTo(404);
         assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
             assertThat(problem.getTitle()).isEqualTo("Resource not found");
             assertThat(problem.getDetail()).isEqualTo("Customer was not found");
@@ -59,7 +61,8 @@ class LocalExceptionHandlerIT {
         var response = handler.handleConstraintViolation(exception,
             request("/constraint-violation"));
 
-        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getStatusCode()
+            .value()).isEqualTo(400);
         assertThat(response.getBody()).isInstanceOfSatisfying(ProblemDetail.class, problem -> {
             assertThat(problem.getTitle()).isEqualTo("Validation failed");
             assertThat(problem.getDetail()).isEqualTo("One or more fields are invalid.");
@@ -73,7 +76,8 @@ class LocalExceptionHandlerIT {
     }
 
     private void assertCommonProblemFields(ProblemDetail problem, String instance) {
-        assertThat(problem.getInstance().toString()).isEqualTo(instance);
+        assertThat(problem.getInstance()
+            .toString()).isEqualTo(instance);
         assertThat(problem.getProperties()).containsKeys("id", "timestamp");
     }
 

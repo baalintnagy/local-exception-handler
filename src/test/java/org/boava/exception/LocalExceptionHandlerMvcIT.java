@@ -3,10 +3,14 @@ package org.boava.exception;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.net.URI;
-import java.util.List;
+import java.util.Locale;
+import java.util.NoSuchElementException;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -23,13 +27,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.MessageSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.validation.Validator;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.web.ErrorResponseException;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 class LocalExceptionHandlerMvcIT {
     private static final String PRIVATE_VALUE = "private-submitted-value";
@@ -63,6 +81,64 @@ class LocalExceptionHandlerMvcIT {
     }
 
     @Test
+    void applicationMessageSourceCustomizesResponsesForRequestLocale() throws Exception {
+        try (var context = new AnnotationConfigWebApplicationContext()) {
+            context.setServletContext(new MockServletContext());
+            context.register(MessagesConfig.class);
+            context.refresh();
+            var localizedMvc = MockMvcBuilders.webAppContextSetup(context)
+                .build();
+            localizedMvc.perform(get("/missing").locale(Locale.FRENCH))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.title").value("Introuvable"))
+                .andExpect(jsonPath("$.detail").value("Resource unavailable."));
+            localizedMvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"too long\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Check your input"))
+                .andExpect(jsonPath("$.detail").value("Correct the invalid fields."))
+                .andExpect(jsonPath("$.violations[0].message").value("Name is too long."));
+            localizedMvc.perform(get("/runtime"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.detail").value("Try again later."));
+        }
+    }
+
+    @Configuration
+    @EnableWebMvc
+    static class MessagesConfig implements WebMvcConfigurer {
+        @Override
+        public Validator getValidator() {
+            return applicationValidator();
+        }
+
+        @Bean
+        MessageSource messageSource() {
+            var source = new ResourceBundleMessageSource();
+            source.setBasename("handler-messages");
+            return source;
+        }
+
+        @Bean
+        LocalExceptionHandler advice() {
+            return new LocalExceptionHandler();
+        }
+
+        @Bean
+        Controller controller(
+            @Qualifier("applicationValidator") LocalValidatorFactoryBean validator) {
+            return new Controller(validator);
+        }
+
+        @Bean
+        LocalValidatorFactoryBean applicationValidator() {
+            var validator = new LocalValidatorFactoryBean();
+            validator.setMessageInterpolator(new ParameterMessageInterpolator());
+            return validator;
+        }
+    }
+
+    @Test
     void runtimeExceptionsUseTheBaseExceptionFallback() throws Exception {
         assertFallback("/runtime");
     }
@@ -77,15 +153,16 @@ class LocalExceptionHandlerMvcIT {
             .andExpect(jsonPath("$.timestamp").isNumber())
             .andExpect(jsonPath("$.instance").value(path));
         assertSafeLogs();
-        assertThat(logs.list).anySatisfy(event ->
-            assertThat(event.getFormattedMessage()).contains("status=500"));
+        assertThat(logs.list)
+            .anySatisfy(event -> assertThat(event.getFormattedMessage()).contains("status=500"));
     }
 
     @Test
     void specificApplicationHandlersTakePrecedenceOverFallback() throws Exception {
         mvc.perform(get("/illegal"))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.errorType").value("BUSINESS_RULE_VIOLATION"));
+            .andExpect(jsonPath("$.title").value("Invalid request"))
+            .andExpect(jsonPath("$.errorType").value("INVALID_REQUEST"));
         mvc.perform(get("/missing"))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorType").value("RESOURCE_NOT_FOUND"));
@@ -94,7 +171,7 @@ class LocalExceptionHandlerMvcIT {
     @Test
     void bodyValidationHasStructuredViolationsWithoutSubmittedValues() throws Exception {
         mvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON)
-            .content("{\"name\":\"" + PRIVATE_VALUE + "\"}"))
+            .content("{\"name\":\"%s\"}".formatted(PRIVATE_VALUE)))
             .andExpect(status().isBadRequest())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.title").value("Validation failed"))
@@ -155,7 +232,8 @@ class LocalExceptionHandlerMvcIT {
         mvc.perform(get("/parameter"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.detail").isString());
-        mvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON).content("{"))
+        mvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON)
+            .content("{"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.detail").isString());
     }
@@ -169,12 +247,14 @@ class LocalExceptionHandlerMvcIT {
             }
         };
         MockMvc diagnosticMvc = MockMvcBuilders.standaloneSetup(new Controller(validator))
-            .setValidator(validator).setControllerAdvice(diagnostic).build();
+            .setValidator(validator)
+            .setControllerAdvice(diagnostic)
+            .build();
         diagnosticMvc.perform(get("/parameter").param("name", PRIVATE_VALUE))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.violations[0].invalidValue").value(PRIVATE_VALUE));
         diagnosticMvc.perform(post("/body").contentType(MediaType.APPLICATION_JSON)
-            .content("{\"name\":\"" + PRIVATE_VALUE + "\"}"))
+            .content("{\"name\":\"%s\"}".formatted(PRIVATE_VALUE)))
             .andExpect(jsonPath("$.violations[0].invalidValue").value(PRIVATE_VALUE));
     }
 
@@ -219,7 +299,7 @@ class LocalExceptionHandlerMvcIT {
 
         @GetMapping("/missing")
         String missing() {
-            throw new java.util.NoSuchElementException("Missing resource");
+            throw new NoSuchElementException("Missing resource");
         }
 
         @GetMapping("/parameter")
@@ -236,12 +316,18 @@ class LocalExceptionHandlerMvcIT {
         String unavailable(@RequestParam int status) {
             ErrorResponseException failure = new ErrorResponseException(
                 HttpStatusCode.valueOf(status));
-            failure.getHeaders().set("Retry-After", "3");
-            failure.getBody().setTitle("Please retry");
-            failure.getBody().setDetail("Service is busy");
-            failure.getBody().setType(URI.create("urn:example:busy"));
-            failure.getBody().setInstance(URI.create("/original"));
-            failure.getBody().setProperty("retryable", true);
+            failure.getHeaders()
+                .set("Retry-After", "3");
+            failure.getBody()
+                .setTitle("Please retry");
+            failure.getBody()
+                .setDetail("Service is busy");
+            failure.getBody()
+                .setType(URI.create("urn:example:busy"));
+            failure.getBody()
+                .setInstance(URI.create("/original"));
+            failure.getBody()
+                .setProperty("retryable", true);
             throw failure;
         }
 

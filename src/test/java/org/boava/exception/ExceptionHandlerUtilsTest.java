@@ -2,13 +2,17 @@ package org.boava.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.entry;
 
 import java.net.URI;
+import java.security.Principal;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.Locale;
+import java.util.Map;
 
-import jakarta.validation.Path;
 import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Path;
 import jakarta.validation.metadata.ConstraintDescriptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ProblemDetail;
@@ -52,8 +56,8 @@ class ExceptionHandlerUtilsTest {
             }
 
             @Override
-            public java.util.Iterator<String> getHeaderNames() {
-                return java.util.Collections.emptyIterator();
+            public Iterator<String> getHeaderNames() {
+                return Collections.emptyIterator();
             }
 
             @Override
@@ -67,18 +71,18 @@ class ExceptionHandlerUtilsTest {
             }
 
             @Override
-            public java.util.Iterator<String> getParameterNames() {
-                return java.util.Collections.emptyIterator();
+            public Iterator<String> getParameterNames() {
+                return Collections.emptyIterator();
             }
 
             @Override
-            public java.util.Map<String, String[]> getParameterMap() {
-                return java.util.Collections.emptyMap();
+            public Map<String, String[]> getParameterMap() {
+                return Collections.emptyMap();
             }
 
             @Override
-            public java.util.Locale getLocale() {
-                return java.util.Locale.ROOT;
+            public Locale getLocale() {
+                return Locale.ROOT;
             }
 
             @Override
@@ -92,7 +96,7 @@ class ExceptionHandlerUtilsTest {
             }
 
             @Override
-            public java.security.Principal getUserPrincipal() {
+            public Principal getUserPrincipal() {
                 return null;
             }
 
@@ -171,7 +175,8 @@ class ExceptionHandlerUtilsTest {
     void getPathFromHandlesNullViolationAndNullPath() {
         assertThat(ExceptionHandlerUtils.getPathFrom(null)).isEmpty();
 
-        assertThat(ExceptionHandlerUtils.getPathFrom(new TestConstraintViolation(null, null, null))).isEmpty();
+        assertThat(ExceptionHandlerUtils.getPathFrom(new TestConstraintViolation(null, null, null)))
+            .isEmpty();
     }
 
     @Test
@@ -198,8 +203,8 @@ class ExceptionHandlerUtilsTest {
         var map = ExceptionHandlerUtils.<String, Object>createMap("first", 1, "second", "two");
 
         assertThat(map).containsExactly(
-            org.assertj.core.api.Assertions.entry("first", 1),
-            org.assertj.core.api.Assertions.entry("second", "two"));
+            entry("first", 1),
+            entry("second", "two"));
         assertThatExceptionOfType(UnsupportedOperationException.class)
             .isThrownBy(() -> map.put("third", 3));
     }

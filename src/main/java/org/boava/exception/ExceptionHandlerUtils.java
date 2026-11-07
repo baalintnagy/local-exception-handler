@@ -1,6 +1,7 @@
 package org.boava.exception;
 
 import static java.util.stream.Collectors.toMap;
+
 import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -35,36 +36,43 @@ public final class ExceptionHandlerUtils {
     }
 
     /**
-     * Extracts the request URI as the RFC 7807 {@code instance} value when the request is servlet-backed.
+     * Extracts the request URI as the RFC 7807 {@code instance} value when the request is
+     * servlet-backed.
      */
     public static @Nullable URI getInstanceFrom(@NonNull WebRequest request) {
         if (!(request instanceof ServletWebRequest swr)) {
             return null;
         }
-        var uri = swr.getRequest().getRequestURI();
-        if (uri == null || uri.isBlank()) {
+        String uri = swr.getRequest()
+            .getRequestURI();
+        if (uri == null
+            || uri.isBlank()) {
             return null;
         }
         return URI.create(uri);
     }
 
     /**
-     * Returns the property path of a constraint violation, or an empty string when it is unavailable.
+     * Returns the property path of a constraint violation, or an empty string when it is
+     * unavailable.
      */
     public static String getPathFrom(ConstraintViolation<?> cv) {
-        if (cv == null || cv.getPropertyPath() == null) {
+        if (cv == null
+            || cv.getPropertyPath() == null) {
             return "";
         }
-        return cv.getPropertyPath().toString();
+        return cv.getPropertyPath()
+            .toString();
     }
 
     /**
-     * Converts a value to text while protecting error handling from broken {@code toString()} methods.
+     * Converts a value to text while protecting error handling from broken {@code toString()}
+     * methods.
      */
     public static String safeToString(Object v) {
         try {
             return String.valueOf(v);
-        } catch (Exception ignore) {
+        } catch (Exception ignored) {
             return "<unprintable>";
         }
     }
@@ -74,7 +82,8 @@ public final class ExceptionHandlerUtils {
      */
     public static <K, V> Map<K, V> createMap(Object... entries) {
         if (entries.length % 2 != 0) {
-            throw new IllegalArgumentException("Number of arguments must be even (key-value pairs)");
+            throw new IllegalArgumentException(
+                "Number of arguments must be even (key-value pairs)");
         }
 
         // Create map using stream API with LinkedHashMap to preserve order
